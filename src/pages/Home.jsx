@@ -166,7 +166,7 @@ export const Home = () => {
       <div className="px-4 flex gap-3">
         <Link 
           to="/add-gold" 
-          className="flex-1 flex justify-center items-center gap-2 py-4 rounded-2xl bg-[var(--gold-3)] dark:bg-white text-white dark:text-slate-900 font-bold text-sm shadow-[0_4px_14px_rgba(217,154,0,0.3)] dark:shadow-white/10 active:scale-[0.98] transition-transform"
+          className="flex-1 flex justify-center items-center gap-2 py-4 rounded-2xl bg-gold-metallic hover:bg-gold-metallic-hover text-slate-950 font-bold text-sm shadow-[0_4px_14px_rgba(217,154,0,0.3)] dark:shadow-white/10 active:scale-[0.98] transition-transform"
         >
           <FiPlus className="w-5 h-5" />
           <span>Add Asset</span>

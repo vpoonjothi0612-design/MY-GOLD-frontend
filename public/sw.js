@@ -1,5 +1,5 @@
 // Aurum Vault Service Worker - Production PWA
-const CACHE_NAME = 'aurum-vault-v1';
+const CACHE_NAME = 'aurum-vault-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

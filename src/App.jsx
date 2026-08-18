@@ -1,7 +1,8 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
-import { ThemeProvider } from './context/ThemeContext';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { FiSun, FiMoon } from 'react-icons/fi';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LocationProvider } from './context/LocationContext';
 import { GoldRateProvider } from './context/GoldRateContext';
@@ -11,6 +12,7 @@ import Navbar from './components/common/Navbar';
 import BottomNavigation from './components/BottomNavigation';
 import FloatingInstallButton from './components/common/FloatingInstallButton';
 import InstallModal from './components/common/InstallModal';
+import GlowingBackground from './components/common/GlowingBackground';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminRoute from './components/AdminRoute';
 
@@ -22,18 +24,35 @@ import Profile from './pages/Profile';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotUsername from './pages/ForgotUsername';
+import ForgotPassword from './pages/ForgotPassword';
 import AdminDashboard from './pages/AdminDashboard';
+import Upgrade from './pages/Upgrade';
 
 const AppLayout = () => {
   const location = useLocation();
   const { user } = useAuth();
-  const isAuthRoute = location.pathname === '/login' || location.pathname === '/register' || location.pathname === '/forgot-username';
+  const { isDark, toggleTheme } = useTheme();
+  const isAuthRoute = location.pathname === '/login' || location.pathname === '/register' || location.pathname === '/forgot-username' || location.pathname === '/forgot-password';
   const isAdmin = user?.role === 'admin';
 
   return (
     <div className="min-h-screen flex flex-col font-sans transition-colors duration-300 relative overflow-x-hidden selection:bg-amber-500/30 selection:text-amber-300 bg-[var(--bg-main)] text-[var(--text-primary)]">
-      {/* Ambient Gold Radial Glow Effect */}
-      <div className="ambient-glow" aria-hidden="true" />
+      {/* Auth Route Theme Switcher */}
+      {isAuthRoute && (
+        <div className="fixed top-4 right-4 sm:top-6 sm:right-6 z-50">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            aria-label="Toggle Dark/Light Mode"
+            className="w-10 h-10 rounded-xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200 dark:border-amber-500/30 text-slate-700 dark:text-amber-300 flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer hover:border-amber-400"
+          >
+            {isDark ? <FiSun className="w-5 h-5 text-amber-400" /> : <FiMoon className="w-5 h-5 text-slate-700" />}
+          </button>
+        </div>
+      )}
+      {/* Ambient Gold Radial Glow Effect matching uploaded image */}
+      <GlowingBackground />
 
       {/* Toast Notifications */}
       <Toaster
@@ -81,6 +100,7 @@ const AppLayout = () => {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-username" element={<ForgotUsername />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
 
           {/* Protected Vault Routes */}
           <Route
@@ -112,6 +132,22 @@ const AppLayout = () => {
             element={
               <ProtectedRoute>
                 <AddGold />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/add"
+            element={
+              <ProtectedRoute>
+                <AddGold />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/upgrade"
+            element={
+              <ProtectedRoute>
+                <Upgrade />
               </ProtectedRoute>
             }
           />
@@ -154,9 +190,6 @@ const AppLayout = () => {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
-
-      {/* Floating PWA Install Button Widget */}
-      <FloatingInstallButton />
 
       {/* In-App Install Modal (replaces browser popup) */}
       <InstallModal />

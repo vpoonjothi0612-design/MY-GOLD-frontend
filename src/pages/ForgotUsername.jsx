@@ -117,6 +117,8 @@ export const ForgotUsername = () => {
                 </div>
                 <input
                   type="tel"
+                  name="tel"
+                  autoComplete="tel"
                   value={mobile}
                   onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))}
                   placeholder="Enter 10-digit number"
@@ -148,6 +150,9 @@ export const ForgotUsername = () => {
               <div className="relative">
                 <input
                   type="text"
+                  name="otp"
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
                   value={otp}
                   onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   placeholder="_ _ _ _ _ _"

@@ -22,7 +22,7 @@ export const AccountMenu = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  if (!user) return null;
+  const isPaid = user?.plan === 'paid' || user?.subscription_status === 'active' || user?.role === 'admin';
 
   return (
     <div className="relative" ref={menuRef}>
@@ -33,13 +33,27 @@ export const AccountMenu = () => {
         aria-expanded={open}
         aria-haspopup="true"
       >
-        <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 flex items-center justify-center font-bold text-xs font-heading">
-          {user.username.charAt(0).toUpperCase()}
+        <div className="relative">
+          <div className="w-7 h-7 rounded-xl bg-gold-metallic text-slate-950 flex items-center justify-center font-bold text-xs font-heading">
+            {user.username.charAt(0).toUpperCase()}
+          </div>
+          {isPaid && (
+            <span className="absolute -top-1.5 -right-1 text-[10px] drop-shadow-sm" title="Premium Pro Active">
+              👑
+            </span>
+          )}
         </div>
         <div className="text-left hidden sm:block">
-          <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block -mb-0.5 font-heading uppercase">
-            Hi,
-          </span>
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block -mb-0.5 font-heading uppercase">
+              Hi,
+            </span>
+            {isPaid && (
+              <span className="text-[9px] font-black px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 font-heading">
+                PRO
+              </span>
+            )}
+          </div>
           <span className="text-xs font-bold text-slate-900 dark:text-white font-heading truncate max-w-[100px] block">
             {user.username}
           </span>
@@ -49,13 +63,24 @@ export const AccountMenu = () => {
 
       {/* Dropdown Menu */}
       {open && (
-        <div className="absolute right-0 mt-2 w-52 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-amber-500/25 shadow-xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-150 backdrop-blur-xl">
+        <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-amber-500/25 shadow-xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-150 backdrop-blur-xl">
           {/* User Info Header in Dropdown */}
           <div className="px-3 py-2.5 border-b border-slate-100 dark:border-slate-800">
-            <p className="text-xs font-extrabold text-slate-900 dark:text-white font-heading truncate">
-              {user.username}
-            </p>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-extrabold text-slate-900 dark:text-white font-heading truncate">
+                {user.username}
+              </p>
+              {isPaid ? (
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-gold-metallic text-slate-950 font-heading">
+                  PREMIUM
+                </span>
+              ) : (
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 font-heading">
+                  FREE TIER
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
               {user.email}
             </p>
           </div>

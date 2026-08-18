@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { addPurchase } from '../services/api';
+import { addPurchase, getEntitlementStatus } from '../services/api';
 import { useGoldRate } from '../context/GoldRateContext';
+import { useAuth } from '../context/AuthContext';
 import { formatCurrency } from '../utils/formatters';
-import { FiCheckCircle, FiImage, FiFileText, FiX, FiUploadCloud } from 'react-icons/fi';
+import { FiCheckCircle, FiImage, FiFileText, FiX, FiUploadCloud, FiAward } from 'react-icons/fi';
 
 export const AddGold = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { getLiveRate, rate24K, rate22K, rate18K, silverRate, silverRate925 } = useGoldRate();
   const [submitting, setSubmitting] = useState(false);
   const [assetType, setAssetType] = useState('GOLD');
@@ -50,10 +52,27 @@ export const AddGold = () => {
 
   const [touched, setTouched] = useState({});
   const [errors, setErrors] = useState({});
+  const [entitlement, setEntitlement] = useState(null);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    checkEntitlement();
   }, []);
+
+  const checkEntitlement = async () => {
+    try {
+      const res = await getEntitlementStatus();
+      if (res && res.data) {
+        setEntitlement(res.data);
+        if (!res.data.canCreate) {
+          setShowUpgradeModal(true);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to check entitlement:', error);
+    }
+  };
 
   const sanitizeDecimalInput = (rawVal, maxDecimals = 3) => {
     if (!rawVal) return '';
@@ -98,25 +117,29 @@ export const AddGold = () => {
   const handleBlur = (e) => {
     const { name, value } = e.target;
     setTouched((prev) => ({ ...prev, [name]: true }));
-    setErrors((prev) => ({ ...prev, [name]: validateField(name, value) }));
+    const errorMsg = validateField(name, value);
+    setErrors((prev) => ({ ...prev, [name]: errorMsg }));
   };
 
   const handleTextChange = (e) => {
     const { name, value } = e.target;
     let finalValue = value;
     if (name === 'weight') finalValue = sanitizeDecimalInput(value, 3);
-    else if (name === 'purchaseRate') finalValue = sanitizeDecimalInput(value, 2);
+    if (name === 'purchaseRate') finalValue = sanitizeDecimalInput(value, 2);
 
     setFormData((prev) => ({ ...prev, [name]: finalValue }));
-    if (touched[name]) setErrors((prev) => ({ ...prev, [name]: validateField(name, finalValue) }));
+    if (touched[name]) {
+      const errorMsg = validateField(name, finalValue);
+      setErrors((prev) => ({ ...prev, [name]: errorMsg }));
+    }
   };
 
-  const handleFileChange = (e, setFile, setPreview, isImageOnly = false) => {
-    const file = e.target.files[0];
+  const handleFileChange = (e, setFile, setPreview) => {
+    const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('File size must be less than 10 MB.');
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File size must be under 5MB');
       return;
     }
 
@@ -132,6 +155,12 @@ export const AddGold = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // Re-verify entitlement before submission
+    if (entitlement && !entitlement.canCreate) {
+      setShowUpgradeModal(true);
+      return;
+    }
 
     const newErrors = {};
     ['itemName', 'weight', 'purchaseDate', 'purchaseRate'].forEach((key) => {
@@ -166,40 +195,96 @@ export const AddGold = () => {
       if (jewelleryFile) dataPayload.append('jewelleryPhoto', jewelleryFile);
 
       await addPurchase(dataPayload);
-      toast.success(`Asset successfully locked!`, { id: toastId });
+      toast.success(`Asset successfully locked in vault!`, { id: toastId });
       navigate('/my-gold');
     } catch (err) {
-      toast.error(err.response?.data?.message || `Failed to add asset.`, { id: toastId });
+      if (err.response?.data?.code === 'FREE_LIMIT_REACHED' || err.response?.status === 402) {
+        toast.dismiss(toastId);
+        setShowUpgradeModal(true);
+      } else {
+        toast.error(err.response?.data?.message || `Failed to add asset.`, { id: toastId });
+      }
     } finally {
       setSubmitting(false);
     }
   };
 
+  const isPaid = entitlement?.status === 'PAID' || user?.plan === 'paid' || user?.subscription_status === 'active' || user?.role === 'admin';
+  const entriesCount = entitlement?.entriesUsed ?? (user?.free_entries_used || 0);
+
   return (
-    <div className="max-w-xl mx-auto space-y-6 pb-24 px-4 animate-fade-in">
-      {/* Header */}
-      <div className="text-center pt-2">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Add Asset</h1>
+    <div className="max-w-xl mx-auto space-y-5 pb-24 px-4 animate-fade-in">
+      {/* 10-Entry Limit Upgrade Modal */}
+      {showUpgradeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
+          <div className="bg-[var(--bg-card)] dark:bg-slate-900 border border-amber-500/40 rounded-3xl p-6 max-w-sm w-full text-center shadow-2xl space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-500 flex items-center justify-center mx-auto text-2xl font-heading">
+              👑
+            </div>
+            <h3 className="text-xl font-black text-slate-900 dark:text-white font-heading">
+              10 Free Entries Reached
+            </h3>
+            <p className="text-xs text-slate-600 dark:text-slate-400">
+              You have completed all 10 free Gold and Silver entries. Upgrade to <b>Premium Monthly AutoPay</b> to unlock unlimited asset entries and cloud vault storage.
+            </p>
+            <div className="space-y-2 pt-2">
+              <button
+                onClick={() => navigate('/upgrade')}
+                className="w-full py-3.5 rounded-xl bg-gold-metallic text-slate-950 font-black text-sm shadow-md font-heading cursor-pointer hover:bg-gold-metallic-hover transition-colors"
+              >
+                Upgrade to Premium Monthly
+              </button>
+              <button
+                onClick={() => {
+                  setShowUpgradeModal(false);
+                  navigate('/my-gold');
+                }}
+                className="w-full py-2.5 text-xs text-slate-500 hover:text-slate-300 font-semibold"
+              >
+                Return to Dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Header with Free Usage Tracker */}
+      <div className="flex items-center justify-between">
+        <div>
+          {isPaid ? (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gold-metallic text-slate-950 font-black text-[11px] font-heading shadow-xs">
+              <span>👑 PREMIUM MONTHLY VAULT</span>
+              <span className="text-[10px] opacity-80">• Active</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 font-bold text-[11px] font-heading">
+              <span>{entriesCount} / 10 Free Entries Used</span>
+            </span>
+          )}
+        </div>
+        <h1 className="text-2xl font-black text-slate-900 dark:text-white font-heading">
+          Add Asset Entry
+        </h1>
       </div>
 
-      <div className="flex bg-slate-100 dark:bg-slate-800 rounded-xl p-1 mb-6">
+      <div className="flex bg-slate-100 dark:bg-slate-850 p-1 rounded-2xl border border-slate-200 dark:border-slate-800">
         <button
           type="button"
           onClick={() => handleAssetTypeChange('GOLD')}
-          className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${
-            assetType === 'GOLD' ? 'bg-amber-500 text-slate-950 shadow-sm' : 'text-slate-500'
+          className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer font-heading ${
+            assetType === 'GOLD' ? 'bg-gold-metallic text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
           }`}
         >
-          Gold
+          🪙 Gold Bullion & Jewelry
         </button>
         <button
           type="button"
           onClick={() => handleAssetTypeChange('SILVER')}
-          className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${
-            assetType === 'SILVER' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500'
+          className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer font-heading ${
+            assetType === 'SILVER' ? 'bg-slate-200 dark:bg-slate-700 text-slate-950 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
           }`}
         >
-          Silver
+          🥈 Silver Bullion & Articles
         </button>
       </div>
 

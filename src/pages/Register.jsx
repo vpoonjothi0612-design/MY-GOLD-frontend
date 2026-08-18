@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { requestRegisterOtp, verifyRegisterOtp } from '../services/api';
+import { requestRegisterOtp, verifyRegisterOtp, verifyRegisterMsg91 } from '../services/api';
+import { initSendOtpWidget, sendOtpViaWidget, verifyOtpViaWidget, retryOtpViaWidget } from '../utils/msg91Otp';
 import toast from 'react-hot-toast';
 import { FiArrowRight, FiShield, FiPhone, FiUser } from 'react-icons/fi';
 
@@ -17,6 +18,10 @@ export const Register = () => {
 
   const { setAuthSession } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    initSendOtpWidget();
+  }, []);
 
   useEffect(() => {
     let timer;
@@ -40,21 +45,25 @@ export const Register = () => {
       toast.error('Password must be at least 6 characters.');
       return;
     }
-    if (!mobile || mobile.length < 10) {
-      toast.error('Please enter a valid mobile number.');
+    const cleanMobile = mobile.replace(/\D/g, '').replace(/^0+/, '');
+    if (!cleanMobile || cleanMobile.length < 10) {
+      toast.error('Please enter a valid 10-digit mobile number.');
       return;
     }
 
     try {
       setLoading(true);
-      const res = await requestRegisterOtp(username, mobile);
-      if (res.success) {
-        toast.success(res.message);
-        setStep(2);
-        setCooldown(30);
-      }
+      // 1. Trigger MSG91 widget sendOtp (delivers physical SMS via widget DLT template)
+      await sendOtpViaWidget(cleanMobile);
+
+      // 2. Also sync with backend
+      await requestRegisterOtp(username, cleanMobile).catch(() => {});
+
+      toast.success('OTP sent successfully to your mobile via MSG91.');
+      setStep(2);
+      setCooldown(60);
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to send OTP.');
+      toast.error(err.response?.data?.message || err.message || 'Failed to send OTP.');
     } finally {
       setLoading(false);
     }
@@ -62,21 +71,48 @@ export const Register = () => {
 
   const handleVerifyOtp = async (e) => {
     e.preventDefault();
-    if (!otp || otp.length !== 6) {
-      toast.error('Please enter a valid 6-digit OTP.');
+    const cleanOtp = String(otp || '').trim();
+    if (!cleanOtp || cleanOtp.length < 4) {
+      toast.error('Please enter the 6-digit OTP.');
       return;
     }
 
     try {
       setLoading(true);
-      const res = await verifyRegisterOtp(username, email, password, mobile, otp);
+      const cleanMobile = mobile.replace(/\D/g, '').replace(/^0+/, '');
+
+      // Step 1: Verify with MSG91 Web SDK to acquire Access Token (with 3s timeout)
+      let msg91Token = null;
+      try {
+        const widgetResult = await Promise.race([
+          verifyOtpViaWidget(cleanMobile, cleanOtp),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000))
+        ]);
+        msg91Token = widgetResult?.accessToken;
+      } catch (widgetErr) {
+        console.warn('[MSG91 Widget Verify Fallback]:', widgetErr.message);
+      }
+
+      let res;
+      if (msg91Token) {
+        res = await verifyRegisterMsg91({
+          username,
+          email,
+          password,
+          mobile: cleanMobile,
+          accessToken: msg91Token,
+        });
+      } else {
+        res = await verifyRegisterOtp(username, email, password, cleanMobile, cleanOtp);
+      }
+
       if (res.success && res.data?.token) {
-        toast.success('Account created and verified! 🎉');
+        toast.success('Account verified & created! 🎉');
         setAuthSession(res.data.token, res.data.user);
-        navigate('/dashboard');
+        navigate('/');
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Invalid OTP.');
+      toast.error(err.response?.data?.message || err.message || 'Invalid OTP. Please check and try again.');
     } finally {
       setLoading(false);
     }
@@ -86,11 +122,11 @@ export const Register = () => {
     if (cooldown > 0) return;
     try {
       setLoading(true);
-      const res = await requestRegisterOtp(username, mobile);
-      if (res.success) {
-        toast.success('OTP resent successfully.');
-        setCooldown(30);
-      }
+      const cleanMobile = mobile.replace(/\D/g, '').replace(/^0+/, '');
+      await retryOtpViaWidget(cleanMobile);
+      await requestRegisterOtp(username, cleanMobile).catch(() => {});
+      toast.success('OTP resent to your mobile via MSG91.');
+      setCooldown(60);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to resend OTP.');
     } finally {
@@ -128,6 +164,8 @@ export const Register = () => {
                 <FiUser className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                 <input
                   type="text"
+                  name="username"
+                  autoComplete="username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Choose a username"
@@ -142,6 +180,8 @@ export const Register = () => {
               <div className="relative">
                 <input
                   type="email"
+                  name="email"
+                  autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="name@example.com"
@@ -156,6 +196,8 @@ export const Register = () => {
               <div className="relative">
                 <input
                   type="password"
+                  name="password"
+                  autoComplete="new-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
@@ -175,6 +217,8 @@ export const Register = () => {
                 </div>
                 <input
                   type="tel"
+                  name="tel"
+                  autoComplete="tel"
                   value={mobile}
                   onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))}
                   placeholder="Enter 10-digit number"
@@ -204,6 +248,9 @@ export const Register = () => {
               <div className="relative">
                 <input
                   type="text"
+                  name="otp"
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
                   value={otp}
                   onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   placeholder="_ _ _ _ _ _"
@@ -233,7 +280,7 @@ export const Register = () => {
 
             <button
               type="submit"
-              disabled={loading || otp.length !== 6}
+              disabled={loading || otp.length < 4}
               className="w-full flex items-center justify-center gap-2 bg-[var(--gold-2)] dark:bg-gradient-to-r dark:from-amber-500 dark:to-amber-600 text-[var(--text-primary)] dark:text-white py-4 rounded-xl font-bold text-sm shadow-md shadow-[var(--border-glow)] dark:hover:shadow-lg dark:hover:shadow-amber-500/20 hover:-translate-y-0.5 transition-all disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:translate-y-0 font-heading"
             >
               {loading ? 'Verifying...' : 'Verify & Create Account'}

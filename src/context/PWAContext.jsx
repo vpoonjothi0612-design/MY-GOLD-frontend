@@ -7,6 +7,7 @@ export const PWAProvider = ({ children }) => {
   const [isInstalled, setIsInstalled] = useState(false);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
 
   // Check if app is already running as an installed standalone PWA
   useEffect(() => {
@@ -23,9 +24,10 @@ export const PWAProvider = ({ children }) => {
   // Suppress browser's install popup completely & track network status
   useEffect(() => {
     const handleBeforeInstallPrompt = (e) => {
-      // Block the browser popup completely
+      // Prevent the mini-infobar from appearing on mobile
       e.preventDefault();
-      // Do NOT store the prompt — we never want to call .prompt()
+      // Stash the event so it can be triggered later.
+      setDeferredPrompt(e);
       return false;
     };
 
@@ -72,13 +74,21 @@ export const PWAProvider = ({ children }) => {
   }, []);
 
   // User confirmed install in our modal → close modal & show success
-  const executeInstall = useCallback(() => {
+  const executeInstall = useCallback(async () => {
     setIsInstallModalOpen(false);
-    setIsInstalled(true);
-    toast.success('Aurum Vault app added! You can pin this tab or bookmark it for quick access. 🪙', {
-      duration: 5000,
-    });
-  }, []);
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setIsInstalled(true);
+      }
+      setDeferredPrompt(null);
+    } else {
+      toast.success('Aurum Vault app added! You can pin this tab or bookmark it for quick access. 🪙', {
+        duration: 5000,
+      });
+    }
+  }, [deferredPrompt]);
 
   return (
     <PWAContext.Provider
@@ -99,7 +109,14 @@ export const PWAProvider = ({ children }) => {
 export const usePWA = () => {
   const context = useContext(PWAContext);
   if (!context) {
-    throw new Error('usePWA must be used within a PWAProvider');
+    return {
+      isInstalled: false,
+      isOnline: true,
+      isInstallModalOpen: false,
+      closeInstallModal: () => {},
+      promptInstall: () => {},
+      executeInstall: () => {},
+    };
   }
   return context;
 };

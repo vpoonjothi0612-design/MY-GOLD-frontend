@@ -1,14 +1,118 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
-import { FiHome, FiTrendingUp, FiPlus, FiUser } from 'react-icons/fi';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { FiHome, FiTrendingUp, FiPlus, FiUser, FiActivity, FiUsers, FiDollarSign, FiClock, FiLogOut } from 'react-icons/fi';
 import { GiGoldBar } from 'react-icons/gi';
 import { useAuth } from '../context/AuthContext';
+import toast from 'react-hot-toast';
 
 export const BottomNavigation = () => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user, logout } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   if (!isAuthenticated) return null;
 
+  const isAdmin = user?.role === 'admin';
+  const searchParams = new URLSearchParams(location.search);
+  const currentTab = searchParams.get('tab') || 'overview';
+
+  const handleAdminLogout = async () => {
+    try {
+      await logout();
+      toast.success('Admin logged out successfully');
+      navigate('/login');
+    } catch (error) {
+      toast.error('Logout failed');
+    }
+  };
+
+  // ----------------------------------------------------
+  // ADMIN MOBILE BOTTOM NAVIGATION
+  // ----------------------------------------------------
+  if (isAdmin) {
+    return (
+      <nav aria-label="Admin Mobile Navigation" className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[var(--bg-card)]/95 dark:bg-slate-900/95 backdrop-blur-xl border-t border-[var(--border-color)] dark:border-slate-800 px-3 py-2 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] dark:shadow-2xl">
+        <div className="flex items-center justify-around max-w-md mx-auto relative">
+          
+          {/* 1. Dashboard Overview */}
+          <NavLink
+            to="/admin?tab=overview"
+            className={() =>
+              `flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl transition-all ${
+                location.pathname === '/admin' && currentTab === 'overview'
+                  ? 'text-amber-600 dark:text-amber-400 font-extrabold'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-medium'
+              }`
+            }
+          >
+            <FiActivity className="w-5 h-5 stroke-[2.5]" />
+            <span className="text-[10px] font-heading font-bold">Dashboard</span>
+          </NavLink>
+
+          {/* 2. User Management */}
+          <NavLink
+            to="/admin?tab=users"
+            className={() =>
+              `flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl transition-all ${
+                location.pathname.startsWith('/admin') && currentTab === 'users'
+                  ? 'text-amber-600 dark:text-amber-400 font-extrabold'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-medium'
+              }`
+            }
+          >
+            <FiUsers className="w-5 h-5 stroke-[2.5]" />
+            <span className="text-[10px] font-heading font-bold">Users</span>
+          </NavLink>
+
+          {/* 3. Center Highlight: Price Editor Button */}
+          <button
+            type="button"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('admin:open-price-editor'));
+            }}
+            className="relative -top-4 flex flex-col items-center transition-transform group hover:scale-105 active:scale-95 cursor-pointer"
+          >
+            <div className="w-[50px] h-[50px] rounded-full bg-gold-metallic flex items-center justify-center text-slate-950 shadow-[0_4px_14px_rgba(217,154,0,0.35)] ring-4 ring-[var(--bg-main)] dark:ring-slate-950 transition-transform">
+              <FiDollarSign className="w-6 h-6 stroke-[3]" />
+            </div>
+            <span className="text-[10px] font-black text-amber-700 dark:text-amber-400 mt-1 font-heading tracking-wider uppercase">
+              Price
+            </span>
+          </button>
+
+          {/* 4. Audit Logs */}
+          <NavLink
+            to="/admin?tab=audit"
+            className={() =>
+              `flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl transition-all ${
+                location.pathname === '/admin' && currentTab === 'audit'
+                  ? 'text-amber-600 dark:text-amber-400 font-extrabold'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-medium'
+              }`
+            }
+          >
+            <FiClock className="w-5 h-5 stroke-[2.5]" />
+            <span className="text-[10px] font-heading font-bold">Audit Logs</span>
+          </NavLink>
+
+          {/* 5. Logout */}
+          <button
+            type="button"
+            onClick={handleAdminLogout}
+            className="flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl text-rose-500 hover:text-rose-600 dark:text-rose-400 font-medium cursor-pointer transition-colors"
+          >
+            <FiLogOut className="w-5 h-5 stroke-[2.5]" />
+            <span className="text-[10px] font-heading font-bold">Logout</span>
+          </button>
+
+        </div>
+      </nav>
+    );
+  }
+
+  // ----------------------------------------------------
+  // REGULAR CUSTOMER MOBILE BOTTOM NAVIGATION
+  // ----------------------------------------------------
   return (
     <nav aria-label="Mobile Bottom Navigation" className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[var(--bg-card)]/95 dark:bg-slate-900/95 backdrop-blur-xl border-t border-[var(--border-color)] dark:border-slate-800 px-4 py-2 shadow-[0_-4px_20px_rgba(0,0,0,0.03)] dark:shadow-lg">
       <div className="flex items-center justify-around max-w-md mx-auto relative">
@@ -19,8 +123,8 @@ export const BottomNavigation = () => {
           className={({ isActive }) =>
             `flex flex-col items-center gap-1 py-1.5 px-3 rounded-xl transition-all ${
               isActive
-                ? 'bg-[var(--gold-1)]/50 dark:bg-transparent text-[var(--gold-4)] dark:text-amber-500 font-bold'
-                : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] dark:text-slate-500 dark:hover:text-slate-200 font-medium'
+                ? 'bg-[var(--gold-1)]/50 dark:bg-transparent text-[var(--gold-4)] dark:text-[var(--text-gold)] font-bold'
+                : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] dark:text-slate-500 dark:hover:text-slate-300 font-medium'
             }`
           }
         >
@@ -34,8 +138,8 @@ export const BottomNavigation = () => {
           className={({ isActive }) =>
             `flex flex-col items-center gap-1 py-1.5 px-3 rounded-xl transition-all ${
               isActive
-                ? 'bg-[var(--gold-1)]/50 dark:bg-transparent text-[var(--gold-4)] dark:text-amber-500 font-bold'
-                : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] dark:text-slate-500 dark:hover:text-slate-200 font-medium'
+                ? 'bg-[var(--gold-1)]/50 dark:bg-transparent text-[var(--gold-4)] dark:text-[var(--text-gold)] font-bold'
+                : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] dark:text-slate-500 dark:hover:text-slate-300 font-medium'
             }`
           }
         >
@@ -47,15 +151,15 @@ export const BottomNavigation = () => {
         <NavLink
           to="/add-gold"
           className={({ isActive }) =>
-            `relative -top-4 flex flex-col items-center transition-all group ${
-              isActive ? 'scale-105' : 'hover:scale-105'
+            `relative -top-4 flex flex-col items-center transition-transform group ${
+              isActive ? 'scale-[1.02]' : 'hover:scale-[1.02]'
             }`
           }
         >
-          <div className="w-13 h-13 rounded-full bg-[var(--gold-3)] dark:bg-gradient-to-tr dark:from-amber-500 dark:via-amber-400 dark:to-amber-300 flex items-center justify-center text-white dark:text-slate-950 shadow-[0_4px_14px_rgba(217,154,0,0.3)] dark:shadow-md dark:shadow-amber-500/40 ring-4 ring-[var(--bg-main)] dark:ring-[#0A0E17] group-active:scale-95 transition-transform border border-white/20">
+          <div className="w-[50px] h-[50px] rounded-full bg-gold-metallic flex items-center justify-center text-slate-950 shadow-[0_4px_14px_rgba(217,154,0,0.35)] ring-4 ring-[var(--bg-main)] dark:ring-[#080D15] group-active:scale-95 transition-transform border-none">
             <FiPlus className="w-6 h-6 stroke-[3]" />
           </div>
-          <span className="text-[10px] font-extrabold text-[var(--text-gold)] dark:text-amber-400 mt-1 font-heading tracking-wide uppercase">
+          <span className="text-[10px] font-extrabold text-[var(--text-gold)] dark:text-[#E8B331] mt-1 font-heading tracking-wide uppercase">
             Add
           </span>
         </NavLink>
@@ -66,8 +170,8 @@ export const BottomNavigation = () => {
           className={({ isActive }) =>
             `flex flex-col items-center gap-1 py-1.5 px-3 rounded-xl transition-all ${
               isActive
-                ? 'bg-[var(--gold-1)]/50 dark:bg-transparent text-[var(--gold-4)] dark:text-amber-500 font-bold'
-                : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] dark:text-slate-500 dark:hover:text-slate-200 font-medium'
+                ? 'bg-[var(--gold-1)]/50 dark:bg-transparent text-[var(--gold-4)] dark:text-[var(--text-gold)] font-bold'
+                : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] dark:text-slate-500 dark:hover:text-slate-300 font-medium'
             }`
           }
         >
@@ -81,8 +185,8 @@ export const BottomNavigation = () => {
           className={({ isActive }) =>
             `flex flex-col items-center gap-1 py-1.5 px-3 rounded-xl transition-all ${
               isActive
-                ? 'bg-[var(--gold-1)]/50 dark:bg-transparent text-[var(--gold-4)] dark:text-amber-500 font-bold'
-                : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] dark:text-slate-500 dark:hover:text-slate-200 font-medium'
+                ? 'bg-[var(--gold-1)]/50 dark:bg-transparent text-[var(--gold-4)] dark:text-[var(--text-gold)] font-bold'
+                : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] dark:text-slate-500 dark:hover:text-slate-300 font-medium'
             }`
           }
         >
@@ -95,3 +199,4 @@ export const BottomNavigation = () => {
 };
 
 export default BottomNavigation;
+

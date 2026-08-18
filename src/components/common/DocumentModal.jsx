@@ -92,8 +92,16 @@ export const DocumentModal = ({
     fileUrl.toLowerCase().includes('.pdf');
 
   const token = localStorage.getItem('aurum_token');
-  const base = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
-  const apiRoot = base.replace(/\/api\/?$/, '');
+  const getApiRoot = () => {
+    if (import.meta.env.VITE_API_BASE_URL && !import.meta.env.VITE_API_BASE_URL.includes('localhost')) {
+      return import.meta.env.VITE_API_BASE_URL.replace(/\/api\/?$/, '');
+    }
+    if (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost') {
+      return `http://${window.location.hostname}:5000`;
+    }
+    return (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '');
+  };
+  const apiRoot = getApiRoot();
 
   const normalizedPath = fileUrl.startsWith('/') ? fileUrl : `/${fileUrl}`;
   const directPath = normalizedPath.startsWith('/api/') ? normalizedPath : `/api${normalizedPath}`;

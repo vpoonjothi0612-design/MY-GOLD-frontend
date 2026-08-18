@@ -1,7 +1,17 @@
 import axios from 'axios';
 
+const getApiBaseUrl = () => {
+  if (import.meta.env.VITE_API_BASE_URL && !import.meta.env.VITE_API_BASE_URL.includes('localhost')) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  if (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost') {
+    return `http://${window.location.hostname}:5000/api`;
+  }
+  return import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+};
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api',
+  baseURL: getApiBaseUrl(),
 });
 
 // Request Interceptor: Attach JWT Bearer Token if available
@@ -47,13 +57,23 @@ export const verifyRegisterOtp = async (username, email, password, mobile, otp) 
   return res.data;
 };
 
-export const requestLoginOtp = async (username, mobile) => {
-  const res = await api.post('/auth/login/request-otp', { username, mobile });
+export const verifyRegisterMsg91 = async (payload) => {
+  const res = await api.post('/auth/register/verify-msg91', payload);
   return res.data;
 };
 
-export const verifyLoginOtp = async (username, mobile, otp) => {
-  const res = await api.post('/auth/login/verify-otp', { username, mobile, otp });
+export const verifyForgotMsg91 = async (payload) => {
+  const res = await api.post('/auth/forgot-password/verify-msg91', payload);
+  return res.data;
+};
+
+export const loginWithMsg91 = async (mobile, accessToken) => {
+  const res = await api.post('/auth/login-msg91', { mobile, accessToken });
+  return res.data;
+};
+
+export const login = async (username, password) => {
+  const res = await api.post('/auth/login', { username, password });
   return res.data;
 };
 
@@ -64,6 +84,21 @@ export const requestForgotUsernameOtp = async (mobile) => {
 
 export const verifyForgotUsernameOtp = async (mobile, otp) => {
   const res = await api.post('/auth/forgot-username/verify-otp', { mobile, otp });
+  return res.data;
+};
+
+export const requestForgotPasswordOtp = async (username, mobile) => {
+  const res = await api.post('/auth/forgot-password/request', { username, mobile });
+  return res.data;
+};
+
+export const verifyForgotPasswordOtp = async (username, mobile, otp) => {
+  const res = await api.post('/auth/forgot-password/verify', { username, mobile, otp });
+  return res.data;
+};
+
+export const resetPassword = async (resetToken, newPassword) => {
+  const res = await api.post('/auth/forgot-password/reset', { resetToken, newPassword });
   return res.data;
 };
 
@@ -95,6 +130,16 @@ export const getMe = async () => {
 
 export const updateUserPreferences = async ({ city, state, country }) => {
   const res = await api.patch('/users/preferences', { city, state, country });
+  return res.data;
+};
+
+export const requestProfileUpdateOtp = async ({ username, email }) => {
+  const res = await api.post('/users/profile/update/request', { username, email });
+  return res.data;
+};
+
+export const verifyProfileUpdateOtp = async (otp) => {
+  const res = await api.post('/users/profile/update/verify', { otp });
   return res.data;
 };
 
@@ -193,6 +238,57 @@ export const getPortfolio = async (params = {}) => {
 };
 
 // ==========================================
+// Subscription & Razorpay APIs
+// ==========================================
+
+export const getSubscriptionPricing = async () => {
+  const res = await api.get('/subscription/pricing');
+  return res.data;
+};
+
+export const getEntitlementStatus = async () => {
+  const res = await api.get('/subscription/status');
+  return res.data;
+};
+
+// NEW: Monthly AutoPay Subscription APIs
+export const createMonthlySubscription = async () => {
+  const res = await api.post('/subscription/create-monthly');
+  return res.data;
+};
+
+export const verifyMonthlySubscription = async (authData) => {
+  const res = await api.post('/subscription/verify-monthly', authData);
+  return res.data;
+};
+
+export const cancelMonthlySubscription = async () => {
+  const res = await api.post('/subscription/cancel');
+  return res.data;
+};
+
+export const pauseMonthlySubscription = async () => {
+  const res = await api.post('/subscription/pause');
+  return res.data;
+};
+
+export const resumeMonthlySubscription = async () => {
+  const res = await api.post('/subscription/resume');
+  return res.data;
+};
+
+// EXISTING: One-Time Order Payment APIs (Preserved)
+export const createSubscriptionOrder = async () => {
+  const res = await api.post('/subscription/create-order');
+  return res.data;
+};
+
+export const verifySubscriptionPayment = async (paymentData) => {
+  const res = await api.post('/subscription/verify-payment', paymentData);
+  return res.data;
+};
+
+// ==========================================
 // Secure Document Fetching
 // ==========================================
 
@@ -232,8 +328,12 @@ export const getAdminUser = async (id) => {
   return res.data;
 };
 
-export const updateAdminUserStatus = async (id, isActive) => {
-  const res = await api.patch(`/admin/users/${id}/status`, { is_active: isActive });
+export const updateAdminUserStatus = async (id, statusOrPayload) => {
+  const isActive =
+    typeof statusOrPayload === 'object' && statusOrPayload !== null
+      ? statusOrPayload.is_active
+      : statusOrPayload;
+  const res = await api.patch(`/admin/users/${id}/status`, { is_active: Boolean(isActive) });
   return res.data;
 };
 
@@ -247,8 +347,12 @@ export const getAdminPricing = async () => {
   return res.data;
 };
 
-export const updateAdminPricing = async (price) => {
-  const res = await api.patch('/admin/pricing', { price });
+export const updateAdminPricing = async (priceOrPayload) => {
+  const payload =
+    typeof priceOrPayload === 'object' && priceOrPayload !== null && 'price' in priceOrPayload
+      ? priceOrPayload
+      : { price: priceOrPayload };
+  const res = await api.patch('/admin/pricing', payload);
   return res.data;
 };
 

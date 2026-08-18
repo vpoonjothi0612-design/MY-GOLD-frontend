@@ -10,17 +10,38 @@ import {
   FiBell,
   FiAward,
   FiPhone,
-  FiX
+  FiX,
+  FiCheckCircle,
+  FiAlertCircle,
+  FiCalendar,
 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
-import { getAssets, requestChangeMobileOtp, verifyChangeMobileOtp } from '../services/api';
+import {
+  getAssets,
+  requestChangeMobileOtp,
+  verifyChangeMobileOtp,
+  requestProfileUpdateOtp,
+  verifyProfileUpdateOtp,
+  cancelMonthlySubscription,
+  pauseMonthlySubscription,
+  resumeMonthlySubscription,
+  getEntitlementStatus,
+} from '../services/api';
+import { formatReadableDate } from '../utils/formatters';
 
 export const Profile = () => {
-  const { user, setAuthSession, logout } = useAuth();
+  const { user, setAuthSession, logout, refreshUserProfile } = useAuth();
   const navigate = useNavigate();
   
   const [assetCount, setAssetCount] = useState(0);
   const [loadingAssets, setLoadingAssets] = useState(true);
+  const [entitlement, setEntitlement] = useState(null);
+  
+  // Subscription Action States & Modals
+  const [showManageSubModal, setShowManageSubModal] = useState(false);
+  const [showPauseConfirm, setShowPauseConfirm] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [subActionLoading, setSubActionLoading] = useState(false);
 
   // Change Mobile State
   const [showMobileModal, setShowMobileModal] = useState(false);
@@ -29,24 +50,138 @@ export const Profile = () => {
   const [mobileOtp, setMobileOtp] = useState('');
   const [mobileLoading, setMobileLoading] = useState(false);
 
+  // Edit Profile State
+  const [showEditProfileModal, setShowEditProfileModal] = useState(false);
+  const [editStep, setEditStep] = useState(1);
+  const [editUsername, setEditUsername] = useState(user?.username || user?.name || '');
+  const [editEmail, setEditEmail] = useState(user?.email || '');
+  const [editOtp, setEditOtp] = useState('');
+  const [editLoading, setEditLoading] = useState(false);
+  const [editCooldown, setEditCooldown] = useState(0);
+
   useEffect(() => {
-    const fetchAssetCount = async () => {
+    let timer;
+    if (editCooldown > 0) {
+      timer = setInterval(() => setEditCooldown((c) => c - 1), 1000);
+    }
+    return () => clearInterval(timer);
+  }, [editCooldown]);
+
+  useEffect(() => {
+    const fetchAssetCountAndEntitlement = async () => {
       try {
         setLoadingAssets(true);
-        // We only need the count, so limit 1 is fine if the API supports it, 
-        // but just getting all purchases is safe enough for small portfolios
-        const response = await getAssets();
-        const count = response?.data?.length || response?.length || 0;
-        setAssetCount(count);
+        const [assetRes, entRes] = await Promise.allSettled([
+          getAssets(),
+          getEntitlementStatus(),
+        ]);
+        if (assetRes.status === 'fulfilled') {
+          const count = assetRes.value?.data?.length || assetRes.value?.length || 0;
+          setAssetCount(count);
+        }
+        if (entRes.status === 'fulfilled' && entRes.value?.data) {
+          setEntitlement(entRes.value.data);
+        }
       } catch (error) {
-        console.error("Failed to fetch asset count", error);
-        setAssetCount(0);
+        console.error("Failed to fetch profile details", error);
       } finally {
         setLoadingAssets(false);
       }
     };
-    fetchAssetCount();
+    fetchAssetCountAndEntitlement();
   }, []);
+
+  const handlePauseAutoPay = async () => {
+    try {
+      setSubActionLoading(true);
+      const res = await pauseMonthlySubscription();
+      toast.success(res.message || 'AutoPay paused.');
+      setShowPauseConfirm(false);
+      if (refreshUserProfile) await refreshUserProfile();
+      const entRes = await getEntitlementStatus();
+      if (entRes?.data) setEntitlement(entRes.data);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to pause subscription');
+    } finally {
+      setSubActionLoading(false);
+    }
+  };
+
+  const handleResumeAutoPay = async () => {
+    try {
+      setSubActionLoading(true);
+      const res = await resumeMonthlySubscription();
+      toast.success(res.message || 'AutoPay resumed successfully!');
+      if (refreshUserProfile) await refreshUserProfile();
+      const entRes = await getEntitlementStatus();
+      if (entRes?.data) setEntitlement(entRes.data);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to resume subscription');
+    } finally {
+      setSubActionLoading(false);
+    }
+  };
+
+  const handleCancelAutoPay = async () => {
+    try {
+      setSubActionLoading(true);
+      const res = await cancelMonthlySubscription();
+      toast.success(res.message || 'AutoPay renewal cancelled.');
+      setShowCancelConfirm(false);
+      if (refreshUserProfile) await refreshUserProfile();
+      const entRes = await getEntitlementStatus();
+      if (entRes?.data) setEntitlement(entRes.data);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to cancel subscription');
+    } finally {
+      setSubActionLoading(false);
+    }
+  };
+
+  const handleRequestEditOtp = async (e) => {
+    if (e) e.preventDefault();
+    if (!editUsername) return toast.error('Username cannot be empty');
+    
+    // Check if nothing changed
+    if (editUsername === (user?.username || user?.name) && editEmail === (user?.email || '')) {
+      return toast.error('No changes to save.');
+    }
+
+    try {
+      setEditLoading(true);
+      const res = await requestProfileUpdateOtp({ username: editUsername, email: editEmail });
+      if (res.success) {
+        toast.success(res.message);
+        setEditStep(2);
+        setEditCooldown(30);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to request OTP');
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const handleVerifyEditOtp = async (e) => {
+    e.preventDefault();
+    if (!editOtp || editOtp.length !== 6) return toast.error('Enter a 6-digit OTP');
+
+    try {
+      setEditLoading(true);
+      const res = await verifyProfileUpdateOtp(editOtp);
+      if (res.success) {
+        toast.success('Profile updated successfully');
+        setShowEditProfileModal(false);
+        setEditStep(1);
+        setEditOtp('');
+        window.location.reload(); 
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update profile');
+    } finally {
+      setEditLoading(false);
+    }
+  };
 
   const handleRequestChangeMobile = async (e) => {
     e.preventDefault();
@@ -116,9 +251,12 @@ export const Profile = () => {
     }
   };
 
-  const isFreePlan = user?.plan !== 'paid';
+  const isPaid = entitlement?.status === 'PAID' || user?.plan === 'paid' || user?.subscription_status === 'active' || user?.role === 'admin';
+  const isCancelled = user?.subscription_status === 'cancelled' || !!user?.cancelled_at;
   const MAX_FREE_ASSETS = 10;
-  const progressPercentage = isFreePlan ? Math.min((assetCount / MAX_FREE_ASSETS) * 100, 100) : 100;
+  const entriesUsed = entitlement?.entriesUsed ?? (user?.free_entries_used || 0);
+  const progressPercentage = !isPaid ? Math.min((entriesUsed / MAX_FREE_ASSETS) * 100, 100) : 100;
+  const currentPeriodEnd = user?.current_period_end || user?.subscription_expires_at || entitlement?.currentPeriodEnd;
 
   return (
     <div className="max-w-md mx-auto space-y-6 pb-24 md:pb-12 animate-in fade-in duration-300">
@@ -175,62 +313,257 @@ export const Profile = () => {
         </div>
       </div>
 
-      {/* 3. Your Plan */}
+      {/* 3. Subscription & Plan */}
       <div className="bg-[var(--bg-card)] dark:bg-slate-900/80 rounded-3xl border border-[var(--border-color)] dark:border-slate-800/80 shadow-[0_4px_24px_rgba(0,0,0,0.02)] dark:shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-[var(--border-color)] dark:border-slate-800/80 flex items-center justify-between">
           <h2 className="text-xs font-extrabold uppercase tracking-wider text-[var(--text-muted)] dark:text-slate-400 font-heading flex items-center gap-2">
             <FiAward className="w-4 h-4 text-[var(--text-gold)] dark:text-amber-500" />
-            Your Plan
+            Subscription & Plan
           </h2>
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[var(--bg-subtle)] dark:bg-slate-800 text-[var(--text-secondary)] dark:text-slate-300">
-            {isFreePlan ? 'Free Tier' : 'Premium Vault Pro'}
+          <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
+            isPaid 
+              ? (user?.subscription_status === 'paused'
+                  ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300'
+                  : isCancelled 
+                    ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300' 
+                    : 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300')
+              : 'bg-[var(--bg-subtle)] dark:bg-slate-800 text-[var(--text-secondary)] dark:text-slate-300'
+          }`}>
+            {isPaid 
+              ? (user?.subscription_status === 'paused' 
+                  ? 'AutoPay Paused' 
+                  : isCancelled 
+                    ? 'Cancellation Scheduled' 
+                    : 'Active Premium') 
+              : 'Free Tier'}
           </span>
         </div>
         
         <div className="p-5 space-y-4">
-          <div className="flex justify-between items-end">
+          <div className="flex justify-between items-start">
             <div>
               <p className="text-sm font-bold text-[var(--text-primary)] dark:text-white font-heading">
-                Vault Capacity
+                {isPaid ? 'Premium Monthly Vault' : 'Free Plan'}
               </p>
               <p className="text-xs text-[var(--text-secondary)] dark:text-slate-400 mt-0.5">
-                {isFreePlan ? 'Track up to 10 physical assets.' : 'Unlimited physical assets tracking.'}
+                {isPaid 
+                  ? 'Unlimited Gold & Silver entries with monthly recurring AutoPay.'
+                  : 'Track up to 10 combined Gold & Silver entries for free.'}
               </p>
             </div>
             <div className="text-right">
               <span className="text-xl font-black text-[var(--text-gold)] dark:text-amber-400 font-heading">
-                {loadingAssets ? '...' : assetCount}
+                {!isPaid ? entriesUsed : '∞'}
               </span>
-              {isFreePlan && (
-                <span className="text-xs text-[var(--text-muted)] dark:text-slate-400 font-medium"> / {MAX_FREE_ASSETS}</span>
+              {!isPaid && (
+                <span className="text-xs text-[var(--text-muted)] dark:text-slate-400 font-medium"> / {MAX_FREE_ASSETS} Used</span>
               )}
             </div>
           </div>
 
-          {isFreePlan && (
-            <div className="space-y-1.5">
-              <div className="w-full h-2.5 bg-[var(--bg-subtle)] dark:bg-slate-800 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-gradient-to-r from-[var(--gold-2)] to-[var(--gold-3)] dark:from-amber-400 dark:to-amber-500 transition-all duration-700 ease-out"
-                  style={{ width: `${progressPercentage}%` }}
-                />
+          {!isPaid ? (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <div className="w-full h-2.5 bg-[var(--bg-subtle)] dark:bg-slate-800 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-[var(--gold-2)] to-[var(--gold-3)] dark:from-amber-400 dark:to-amber-500 transition-all duration-700 ease-out"
+                    style={{ width: `${progressPercentage}%` }}
+                  />
+                </div>
+                <p className="text-[10px] font-medium text-[var(--text-muted)] dark:text-slate-400 text-right">
+                  {Math.max(MAX_FREE_ASSETS - entriesUsed, 0)} free entries remaining
+                </p>
               </div>
-              <p className="text-[10px] font-medium text-[var(--text-muted)] dark:text-slate-400 text-right">
-                {MAX_FREE_ASSETS - assetCount} assets remaining
-              </p>
+
+              <button 
+                onClick={() => navigate('/upgrade')}
+                className="w-full py-3 rounded-xl bg-gold-metallic hover:bg-gold-metallic-hover text-slate-950 font-bold text-sm transition-all shadow-[0_4px_14px_rgba(217,154,0,0.3)] dark:shadow-md font-heading hover:-translate-y-0.5 cursor-pointer"
+              >
+                Upgrade to Premium Monthly
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3 pt-2 border-t border-[var(--border-color)] dark:border-slate-800">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-[var(--text-secondary)] dark:text-slate-400 flex items-center gap-1.5">
+                  <span className="font-semibold">AutoPay:</span>
+                </span>
+                <span className={`font-bold font-heading px-2 py-0.5 rounded-md text-[11px] ${
+                  user?.subscription_status === 'paused'
+                    ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                    : isCancelled
+                      ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                      : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                }`}>
+                  {user?.subscription_status === 'paused' ? 'PAUSED' : (isCancelled ? 'OFF / Ending' : 'ON')}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-[var(--text-secondary)] dark:text-slate-400 flex items-center gap-1.5">
+                  <FiCalendar className="w-3.5 h-3.5 text-amber-500" />
+                  {isCancelled ? 'Access Valid Until:' : (user?.subscription_status === 'paused' ? 'Current Access Until:' : 'Next AutoPay Renewal:')}
+                </span>
+                <span className="font-bold text-[var(--text-primary)] dark:text-white font-mono">
+                  {currentPeriodEnd ? formatDate(currentPeriodEnd) : 'Active'}
+                </span>
+              </div>
+
+              <button
+                onClick={() => setShowManageSubModal(true)}
+                className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-200 font-bold text-xs transition-colors border border-slate-200 dark:border-slate-700 cursor-pointer flex items-center justify-center gap-2"
+              >
+                <span>⚙️ Manage Subscription & AutoPay</span>
+              </button>
             </div>
           )}
-
-          {isFreePlan && (
-            <button 
-              onClick={() => navigate('/subscription')}
-              className="w-full py-3 rounded-xl bg-[var(--gold-2)] dark:bg-slate-800 text-[var(--text-primary)] dark:text-white font-bold text-sm transition-all shadow-[0_4px_14px_rgba(217,154,0,0.3)] dark:shadow-md font-heading hover:-translate-y-0.5"
-            >
-              Upgrade to Premium
-            </button>
-          )}
         </div>
-      </div>
+      </div> 
+
+      {/* Manage Subscription Modal */}
+      {showManageSubModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
+          <div className="bg-[var(--bg-card)] dark:bg-slate-900 border border-amber-500/40 rounded-3xl p-6 max-w-sm w-full shadow-2xl space-y-4 text-left">
+            <div className="flex items-center justify-between border-b border-[var(--border-color)] dark:border-slate-800 pb-3">
+              <h3 className="text-lg font-black text-slate-900 dark:text-white font-heading flex items-center gap-2">
+                <span>👑</span> Manage Subscription
+              </h3>
+              <button 
+                onClick={() => setShowManageSubModal(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-white"
+              >
+                <FiX className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="flex justify-between py-1 border-b border-slate-100 dark:border-slate-800/60">
+                <span className="text-slate-500">Plan:</span>
+                <span className="font-bold text-slate-900 dark:text-white">Premium Monthly Vault</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-slate-100 dark:border-slate-800/60">
+                <span className="text-slate-500">AutoPay Status:</span>
+                <span className={`font-bold ${
+                  user?.subscription_status === 'paused'
+                    ? 'text-amber-500'
+                    : isCancelled
+                      ? 'text-rose-500'
+                      : 'text-emerald-500'
+                }`}>
+                  {user?.subscription_status === 'paused' ? 'PAUSED' : (isCancelled ? 'OFF / Ending' : 'ON')}
+                </span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-slate-100 dark:border-slate-800/60">
+                <span className="text-slate-500">Current Period:</span>
+                <span className="font-mono text-slate-700 dark:text-slate-300">
+                  {user?.current_period_start ? formatDate(user.current_period_start) : '—'} to {currentPeriodEnd ? formatDate(currentPeriodEnd) : '—'}
+                </span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-slate-100 dark:border-slate-800/60">
+                <span className="text-slate-500">{isCancelled ? 'Access Valid Until:' : 'Next Billing Date:'}</span>
+                <span className="font-mono font-bold text-slate-900 dark:text-white">
+                  {currentPeriodEnd ? formatDate(currentPeriodEnd) : '—'}
+                </span>
+              </div>
+            </div>
+
+            {/* Action Buttons inside Modal */}
+            <div className="space-y-2 pt-2">
+              {user?.subscription_status === 'paused' ? (
+                <button
+                  onClick={handleResumeAutoPay}
+                  disabled={subActionLoading}
+                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {subActionLoading ? 'Resuming AutoPay...' : '▶️ Resume AutoPay'}
+                </button>
+              ) : !isCancelled ? (
+                <button
+                  onClick={() => setShowPauseConfirm(true)}
+                  disabled={subActionLoading}
+                  className="w-full py-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 font-bold text-xs transition-colors cursor-pointer border border-amber-500/30 disabled:opacity-50"
+                >
+                  ⏸️ Pause AutoPay
+                </button>
+              ) : null}
+
+              {!isCancelled && (
+                <button
+                  onClick={() => setShowCancelConfirm(true)}
+                  disabled={subActionLoading}
+                  className="w-full py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 font-bold text-xs transition-colors cursor-pointer border border-rose-200 dark:border-rose-500/30 disabled:opacity-50"
+                >
+                  ❌ Cancel Subscription
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pause Confirmation Modal */}
+      {showPauseConfirm && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
+          <div className="bg-[var(--bg-card)] dark:bg-slate-900 border border-amber-500/40 rounded-3xl p-6 max-w-sm w-full text-center shadow-2xl space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-500 flex items-center justify-center mx-auto text-2xl">
+              ⏸️
+            </div>
+            <h3 className="text-lg font-black text-slate-900 dark:text-white font-heading">
+              Pause AutoPay?
+            </h3>
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              Future recurring payments will be paused according to the subscription lifecycle. Your subscription status will be updated after Razorpay confirms the change.
+            </p>
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setShowPauseConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs"
+              >
+                Keep Active
+              </button>
+              <button
+                onClick={handlePauseAutoPay}
+                disabled={subActionLoading}
+                className="flex-1 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs disabled:opacity-50"
+              >
+                {subActionLoading ? 'Pausing...' : 'Confirm Pause'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Confirmation Modal */}
+      {showCancelConfirm && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
+          <div className="bg-[var(--bg-card)] dark:bg-slate-900 border border-rose-500/40 rounded-3xl p-6 max-w-sm w-full text-center shadow-2xl space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-500 flex items-center justify-center mx-auto text-2xl">
+              ⚠️
+            </div>
+            <h3 className="text-lg font-black text-slate-900 dark:text-white font-heading">
+              Cancel AutoPay?
+            </h3>
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              Your future recurring payments will stop. Your Premium access will remain active until the end of your current paid billing period ({currentPeriodEnd ? formatDate(currentPeriodEnd) : 'billing period'}).
+            </p>
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setShowCancelConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs"
+              >
+                Keep Subscription
+              </button>
+              <button
+                onClick={handleCancelAutoPay}
+                disabled={subActionLoading}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs disabled:opacity-50"
+              >
+                {subActionLoading ? 'Cancelling...' : 'Cancel AutoPay'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )} 
 
       {/* 4. Security Notice */}
       <div className="p-5 rounded-3xl bg-[var(--gold-1)]/10 dark:bg-amber-500/5 border border-[var(--gold-2)]/30 dark:border-amber-500/20 flex gap-4">
@@ -248,7 +581,10 @@ export const Profile = () => {
       {/* 5. Account Settings (UI Links) */}
       <div className="bg-[var(--bg-card)] dark:bg-slate-900/80 rounded-3xl border border-[var(--border-color)] dark:border-slate-800/80 shadow-[0_4px_24px_rgba(0,0,0,0.02)] dark:shadow-sm overflow-hidden">
         <div className="divide-y divide-[var(--border-color)] dark:divide-slate-800/80">
-          <button className="w-full px-5 py-4 flex items-center justify-between hover:bg-[var(--bg-subtle)] dark:hover:bg-slate-800/50 transition-colors">
+          <button 
+            onClick={() => setShowEditProfileModal(true)}
+            className="w-full px-5 py-4 flex items-center justify-between hover:bg-[var(--bg-subtle)] dark:hover:bg-slate-800/50 transition-colors"
+          >
             <div className="flex items-center gap-3 text-[var(--text-primary)] dark:text-slate-300">
               <FiUser className="w-4 h-4 text-[var(--text-muted)] dark:text-slate-400" />
               <span className="text-sm font-bold">Edit Profile</span>
@@ -338,15 +674,30 @@ export const Profile = () => {
                   <p className="text-sm text-[var(--text-secondary)] dark:text-slate-400 text-center">
                     Enter the code sent to +91 {newMobile.slice(-4).padStart(10, '*')}
                   </p>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={mobileOtp}
-                      onChange={(e) => setMobileOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                      placeholder="_ _ _ _ _ _"
-                      className="w-full px-4 py-4 bg-[var(--bg-subtle)] dark:bg-slate-950/50 border border-[var(--border-color)] dark:border-slate-800 rounded-xl focus:ring-2 focus:ring-[var(--border-glow)] dark:focus:ring-amber-500/20 focus:border-[var(--text-gold)] dark:focus:border-amber-500 outline-none transition-all text-2xl font-black text-[var(--text-primary)] dark:text-white text-center tracking-[0.5em] placeholder:tracking-normal"
-                      required
-                    />
+                  <div className="flex justify-between gap-2">
+                    {[...Array(6)].map((_, i) => (
+                      <input
+                        key={`mobile-otp-${i}`}
+                        type="text"
+                        maxLength="1"
+                        value={mobileOtp[i] || ''}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '');
+                          const newOtp = mobileOtp.split('');
+                          newOtp[i] = val;
+                          setMobileOtp(newOtp.join('').slice(0,6));
+                          if (val && e.target.nextSibling) {
+                            e.target.nextSibling.focus();
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Backspace' && !mobileOtp[i] && e.target.previousSibling) {
+                            e.target.previousSibling.focus();
+                          }
+                        }}
+                        className="w-12 h-14 bg-[var(--bg-subtle)] dark:bg-slate-950/50 border border-[var(--border-color)] dark:border-slate-800 rounded-xl focus:ring-2 focus:ring-[var(--border-glow)] dark:focus:ring-amber-500/20 focus:border-[var(--text-gold)] dark:focus:border-amber-500 outline-none transition-all text-2xl font-black text-[var(--text-primary)] dark:text-white text-center"
+                      />
+                    ))}
                   </div>
                   <button
                     type="submit"
@@ -354,6 +705,114 @@ export const Profile = () => {
                     className="w-full bg-[var(--gold-2)] dark:bg-gradient-to-r dark:from-amber-500 dark:to-amber-600 text-[var(--text-primary)] dark:text-white py-3.5 rounded-xl font-bold text-sm hover:-translate-y-0.5 disabled:opacity-50 transition-all font-heading"
                   >
                     {mobileLoading ? 'Verifying...' : 'Verify & Update'}
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showEditProfileModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[var(--bg-card)] dark:bg-slate-900 w-full max-w-sm rounded-[24px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] overflow-hidden animate-in slide-in-from-bottom-4 duration-300 border border-[var(--border-color)] dark:border-slate-800">
+            <div className="px-6 py-5 border-b border-[var(--border-color)] dark:border-slate-800 flex items-center justify-between">
+              <h3 className="text-lg font-black text-[var(--text-primary)] dark:text-white font-heading">
+                Edit Profile
+              </h3>
+              <button 
+                onClick={() => { setShowEditProfileModal(false); setEditStep(1); setEditUsername(user?.username || user?.name || ''); setEditEmail(user?.email || ''); setEditOtp(''); }}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-[var(--bg-subtle)] dark:bg-slate-800 text-[var(--text-muted)] hover:text-[var(--text-primary)] dark:hover:text-slate-300 transition-colors"
+              >
+                <FiX className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="p-6">
+              {editStep === 1 ? (
+                <form onSubmit={handleRequestEditOtp} className="space-y-5">
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] dark:text-slate-500 ml-1">Username</label>
+                    <input
+                      type="text"
+                      value={editUsername}
+                      onChange={(e) => setEditUsername(e.target.value)}
+                      placeholder="Enter your username"
+                      className="w-full px-4 py-3.5 bg-[var(--bg-subtle)] dark:bg-slate-950/50 border border-[var(--border-color)] dark:border-slate-800 rounded-xl focus:ring-2 focus:ring-[var(--border-glow)] dark:focus:ring-amber-500/20 focus:border-[var(--text-gold)] dark:focus:border-amber-500 outline-none transition-all text-sm font-bold text-[var(--text-primary)] dark:text-white placeholder:font-medium placeholder:text-slate-400"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] dark:text-slate-500 ml-1">Email (Optional)</label>
+                    <input
+                      type="email"
+                      value={editEmail}
+                      onChange={(e) => setEditEmail(e.target.value)}
+                      placeholder="Enter your email"
+                      className="w-full px-4 py-3.5 bg-[var(--bg-subtle)] dark:bg-slate-950/50 border border-[var(--border-color)] dark:border-slate-800 rounded-xl focus:ring-2 focus:ring-[var(--border-glow)] dark:focus:ring-amber-500/20 focus:border-[var(--text-gold)] dark:focus:border-amber-500 outline-none transition-all text-sm font-bold text-[var(--text-primary)] dark:text-white placeholder:font-medium placeholder:text-slate-400"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={editLoading}
+                    className="w-full bg-[var(--gold-2)] dark:bg-white text-[var(--text-primary)] dark:text-slate-900 py-3.5 rounded-xl font-bold text-sm hover:-translate-y-0.5 disabled:opacity-50 transition-all font-heading mt-2"
+                  >
+                    {editLoading ? 'Sending OTP...' : 'Continue & Verify'}
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleVerifyEditOtp} className="space-y-5">
+                  <p className="text-sm text-[var(--text-secondary)] dark:text-slate-400 text-center">
+                    We've sent an OTP to your<br/>registered mobile number.
+                  </p>
+                  <div className="flex justify-between gap-2">
+                    {[...Array(6)].map((_, i) => (
+                      <input
+                        key={`edit-otp-${i}`}
+                        type="text"
+                        maxLength="1"
+                        value={editOtp[i] || ''}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '');
+                          const newOtp = editOtp.split('');
+                          newOtp[i] = val;
+                          setEditOtp(newOtp.join('').slice(0,6));
+                          if (val && e.target.nextSibling) {
+                            e.target.nextSibling.focus();
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Backspace' && !editOtp[i] && e.target.previousSibling) {
+                            e.target.previousSibling.focus();
+                          }
+                        }}
+                        className="w-12 h-14 bg-[var(--bg-subtle)] dark:bg-slate-950/50 border border-[var(--border-color)] dark:border-slate-800 rounded-xl focus:ring-2 focus:ring-[var(--border-glow)] dark:focus:ring-amber-500/20 focus:border-[var(--text-gold)] dark:focus:border-amber-500 outline-none transition-all text-2xl font-black text-[var(--text-primary)] dark:text-white text-center"
+                      />
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between mt-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditStep(1)}
+                      className="text-xs font-bold text-[var(--text-secondary)] hover:text-[var(--text-primary)] dark:text-slate-500 dark:hover:text-slate-300 transition-colors"
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRequestEditOtp()}
+                      disabled={editCooldown > 0 || editLoading}
+                      className="text-xs font-bold text-[var(--text-gold)] dark:text-amber-400 disabled:text-[var(--text-muted)] dark:disabled:text-slate-400 transition-colors"
+                    >
+                      {editCooldown > 0 ? `Resend OTP in 00:${editCooldown.toString().padStart(2, '0')}` : 'Resend OTP'}
+                    </button>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={editLoading || editOtp.length !== 6}
+                    className="w-full bg-[var(--gold-2)] dark:bg-gradient-to-r dark:from-amber-500 dark:to-amber-600 text-[var(--text-primary)] dark:text-white py-3.5 rounded-xl font-bold text-sm hover:-translate-y-0.5 disabled:opacity-50 transition-all font-heading"
+                  >
+                    {editLoading ? 'Verifying...' : 'Verify & Save'}
                   </button>
                 </form>
               )}
