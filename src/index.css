@@ -2,9 +2,15 @@
 
 @variant dark (&:where(.dark, .dark *));
 
+@theme {
+  --font-heading: 'Cinzel', 'Playfair Display', serif;
+  --font-cinzel: 'Cinzel', serif;
+  --font-playfair: 'Playfair Display', serif;
+}
+
 @layer base {
   :root {
-    --font-heading: 'Outfit', sans-serif;
+    --font-heading: 'Cinzel', 'Playfair Display', serif;
     --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     
     /* Default Dark Obsidian Vault Theme -> Premium Deep Navy & Gold */

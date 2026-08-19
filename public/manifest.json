@@ -1,6 +1,6 @@
 {
-  "name": "Aurum Vault — Live Gold & Silver Tracker",
-  "short_name": "Aurum Vault",
+  "name": "mygold — Live Gold & Silver Tracker",
+  "short_name": "mygold",
   "description": "Real-time Gold & Silver bullion rates and precious metals physical vault tracker.",
   "start_url": "/",
   "id": "/",

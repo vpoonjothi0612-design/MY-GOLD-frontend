@@ -1,18 +1,22 @@
 import axios from 'axios';
 
 const getApiBaseUrl = () => {
-  if (import.meta.env.VITE_API_BASE_URL && !import.meta.env.VITE_API_BASE_URL.includes('localhost')) {
-    return import.meta.env.VITE_API_BASE_URL;
-  }
   if (typeof window !== 'undefined' && window.location.hostname) {
-    if (window.location.hostname === 'mygold.gldatacenter.com' || window.location.hostname.endsWith('gldatacenter.com')) {
+    // 1. Production DNS Domain
+    if (
+      window.location.hostname === 'mygold.gldatacenter.com' ||
+      window.location.hostname.endsWith('gldatacenter.com')
+    ) {
       return `${window.location.origin}/api`;
     }
-    if (window.location.hostname !== 'localhost') {
-      return `http://${window.location.hostname}:5000/api`;
+    // 2. Localhost Development
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      return import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
     }
+    // 3. Local Area Network IP (e.g. Mobile device testing on WiFi)
+    return `${window.location.protocol}//${window.location.hostname}:5000/api`;
   }
-  return import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+  return import.meta.env.VITE_API_BASE_URL || 'https://mygold.gldatacenter.com/api';
 };
 
 const api = axios.create({
