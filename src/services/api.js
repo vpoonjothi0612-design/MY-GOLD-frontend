@@ -4,8 +4,13 @@ const getApiBaseUrl = () => {
   if (import.meta.env.VITE_API_BASE_URL && !import.meta.env.VITE_API_BASE_URL.includes('localhost')) {
     return import.meta.env.VITE_API_BASE_URL;
   }
-  if (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost') {
-    return `http://${window.location.hostname}:5000/api`;
+  if (typeof window !== 'undefined' && window.location.hostname) {
+    if (window.location.hostname === 'mygold.gldatacenter.com' || window.location.hostname.endsWith('gldatacenter.com')) {
+      return `${window.location.origin}/api`;
+    }
+    if (window.location.hostname !== 'localhost') {
+      return `http://${window.location.hostname}:5000/api`;
+    }
   }
   return import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 };

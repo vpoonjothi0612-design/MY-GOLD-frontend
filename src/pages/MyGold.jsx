@@ -5,6 +5,7 @@ import { useGoldRate } from '../context/GoldRateContext';
 import { formatCurrency, formatGrams } from '../utils/formatters';
 import PurchaseCard from '../components/PurchaseCard';
 import ConfirmModal from '../components/common/ConfirmModal';
+import Pagination from '../components/common/Pagination';
 import toast from 'react-hot-toast';
 import { FiPlus, FiFolder, FiRefreshCw, FiSearch, FiX } from 'react-icons/fi';
 import { GiGoldBar } from 'react-icons/gi';
@@ -17,6 +18,10 @@ export const MyGold = () => {
 
   const [assetFilter, setAssetFilter] = useState('ALL'); // 'ALL' | 'GOLD' | 'SILVER'
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(5);
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState(null);
@@ -126,6 +131,25 @@ export const MyGold = () => {
     });
   }, [recalculatedPurchases, assetFilter, searchQuery]);
 
+  // Reset page when filter or search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [assetFilter, searchQuery, itemsPerPage]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredPurchases.length / itemsPerPage));
+
+  // Ensure current page is valid when list count shrinks
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const paginatedPurchases = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredPurchases.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredPurchases, currentPage, itemsPerPage]);
+
   return (
     <div className="space-y-6 pb-20 animate-fade-in max-w-2xl mx-auto px-2">
       
@@ -136,17 +160,17 @@ export const MyGold = () => {
           <p className="text-xs text-slate-500">Your physical portfolio</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={loadPurchases} className="p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+          <button onClick={loadPurchases} className="p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
             <FiRefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
-          <Link to="/add-gold" className="p-2 rounded-full bg-amber-500 text-slate-950">
+          <Link to="/add-gold" className="p-2 rounded-full bg-amber-500 text-slate-950 hover:bg-amber-400 transition-colors">
             <FiPlus className="w-4 h-4 stroke-[3]" />
           </Link>
         </div>
       </div>
 
       {/* 2. Simple Portfolio Summary */}
-      <div className="flex items-center justify-between p-4 crystal-glass rounded-2xl">
+      <div className="flex items-center justify-between p-4 crystal-glass rounded-2xl shadow-sm">
         <div>
           <p className="text-xs text-slate-500 mb-0.5">Total Value</p>
           <p className="text-2xl font-black text-slate-900 dark:text-white tabular-nums">
@@ -168,10 +192,10 @@ export const MyGold = () => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search assets..."
-            className="w-full pl-9 pr-9 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:border-amber-500"
+            className="w-full pl-9 pr-9 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:border-amber-500 shadow-xs"
           />
           {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+            <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
               <FiX className="w-4 h-4" />
             </button>
           )}
@@ -182,7 +206,7 @@ export const MyGold = () => {
             <button
               key={filter}
               onClick={() => setAssetFilter(filter)}
-              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
+              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                 assetFilter === filter 
                   ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' 
                   : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
@@ -194,7 +218,7 @@ export const MyGold = () => {
         </div>
       </div>
 
-      {/* 4. Asset List */}
+      {/* 4. Asset List & Pagination */}
       {loading ? (
         <div className="space-y-3 pt-4">
           {[1, 2, 3].map(i => (
@@ -203,14 +227,28 @@ export const MyGold = () => {
         </div>
       ) : filteredPurchases.length > 0 ? (
         <div className="space-y-3">
-          {filteredPurchases.map((purchase) => (
-            <PurchaseCard
-              key={purchase.id}
-              purchase={purchase}
-              onDelete={handleDeletePrompt}
-              showDelete={true}
-            />
-          ))}
+          <div className="space-y-3">
+            {paginatedPurchases.map((purchase) => (
+              <PurchaseCard
+                key={purchase.id}
+                purchase={purchase}
+                onDelete={handleDeletePrompt}
+                showDelete={true}
+              />
+            ))}
+          </div>
+
+          {/* Pagination Controls */}
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={filteredPurchases.length}
+            itemsPerPage={itemsPerPage}
+            onPageChange={setCurrentPage}
+            onItemsPerPageChange={setItemsPerPage}
+            pageSizeOptions={[5, 10, 20]}
+            itemName="assets"
+          />
         </div>
       ) : (
         <div className="p-8 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl mt-8">

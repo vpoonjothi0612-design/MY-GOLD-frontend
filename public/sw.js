@@ -38,8 +38,16 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Ignore non-GET requests or browser-extensions
-  if (request.method !== 'GET' || !url.protocol.startsWith('http')) {
+  // Ignore non-GET requests, dev/HMR assets, or non-http protocols
+  if (
+    request.method !== 'GET' ||
+    !url.protocol.startsWith('http') ||
+    url.pathname.includes('/@vite/') ||
+    url.pathname.includes('/@react-refresh') ||
+    url.pathname.includes('/@fs/') ||
+    url.pathname.includes('/node_modules/') ||
+    url.search.includes('?v=')
+  ) {
     return;
   }
 
